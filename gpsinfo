@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS 地理定位資訊顯示</title>
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 設定字體為 Inter，並確保整個頁面的背景和文字樣式 */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* 淺藍灰色背景 */
+            color: #1f2937; /* 深灰色文字 */
+        }
+        /* 卡片樣式 */
+        .info-card {
+            background-color: white;
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            padding: 1.5rem;
+            transition: transform 0.3s ease;
+        }
+        .info-card:hover {
+            transform: translateY(-2px);
+        }
+        /* 按鈕樣式 */
+        .action-button {
+            transition: all 0.2s;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .action-button:hover {
+            box-shadow: 0 6px 8px -2px rgba(0, 0, 0, 0.15);
+            transform: translateY(-1px);
+        }
+        /* Modal 遮罩層 */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8 min-h-screen">
+
+    <!-- 初始權限請求 Modal -->
+    <div id="permissionModal" class="modal-overlay">
+        <div class="bg-white p-8 rounded-2xl max-w-sm mx-4 text-center shadow-2xl">
+            <svg class="w-12 h-12 mx-auto text-blue-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            <h2 class="text-2xl font-bold mb-3 text-gray-800">需要您的位置資訊</h2>
+            <p class="text-gray-600 mb-6">
+                本工具將請求您的地理定位權限，以便顯示所有可用的 GPS 數據，包括經緯度、精確度、海拔高度和移動速度等。
+            </p>
+            <button id="modalStartButton" class="action-button bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full w-full">
+                我同意並啟動偵測
+            </button>
+        </div>
+    </div>
+
+
+    <div class="max-w-4xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-extrabold text-blue-600 mb-2">地理定位資訊偵測器</h1>
+            <p class="text-gray-500">使用 Geolocation API 取得裝置位置的完整數據</p>
+        </header>
+
+        <!-- 控制區塊 -->
+        <div class="mb-8 p-6 bg-white rounded-xl shadow-lg flex flex-col sm:flex-row justify-between items-center">
+            <div id="status-message" class="font-semibold text-lg text-gray-700 mb-4 sm:mb-0">
+                狀態: 尚未開始偵測
+            </div>
+            <div class="flex space-x-4">
+                <button id="startButton" class="action-button bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-full opacity-50 cursor-not-allowed" disabled>
+                    重新啟動偵測
+                </button>
+                <button id="stopButton" class="action-button bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded-full opacity-50 cursor-not-allowed" disabled>
+                    停止偵測
+                </button>
+            </div>
+        </div>
+
+        <!-- 錯誤與訊息顯示 -->
+        <div id="messageBox" class="hidden mb-6 p-4 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded-lg">
+            <!-- 錯誤或提示訊息將顯示在此處 -->
+        </div>
+
+        <!-- 數據顯示區塊 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+            <!-- 經緯度與精確度 (核心資訊) -->
+            <div class="info-card">
+                <h2 class="text-2xl font-bold text-blue-500 mb-4 flex items-center">
+                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    核心位置
+                </h2>
+                <div class="space-y-3 text-lg">
+                    <p>緯度 (Latitude): <span id="lat" class="font-mono text-gray-800">N/A</span></p>
+                    <p>經度 (Longitude): <span id="lon" class="font-mono text-gray-800">N/A</span></p>
+                    <p>水平精確度 (Accuracy): <span id="accuracy" class="font-mono text-gray-800">N/A</span></p>
+                </div>
+            </div>
+
+            <!-- 海拔高度與速度 (運動資訊) -->
+            <div class="info-card">
+                <h2 class="text-2xl font-bold text-blue-500 mb-4 flex items-center">
+                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+                    高度與速度
+                </h2>
+                <div class="space-y-3 text-lg">
+                    <p>海拔高度 (Altitude): <span id="altitude" class="font-mono text-gray-800">N/A</span></p>
+                    <p>海拔精確度 (Alt. Accuracy): <span id="altitudeAccuracy" class="font-mono text-gray-800">N/A</span></p>
+                    <p>速度 (Speed, m/s): <span id="speed" class="font-mono text-gray-800">N/A</span></p>
+                </div>
+            </div>
+
+            <!-- 方向與時間戳記 -->
+            <div class="info-card">
+                <h2 class="text-2xl font-bold text-blue-500 mb-4 flex items-center">
+                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    方向與時間
+                </h2>
+                <div class="space-y-3 text-lg">
+                    <p>航向 (Heading): <span id="heading" class="font-mono text-gray-800">N/A</span></p>
+                    <p>更新時間 (Timestamp): <span id="timestamp" class="font-mono text-gray-800 text-sm">N/A</span></p>
+                    <p>時間差 (Delay, ms): <span id="delay" class="font-mono text-gray-800">0</span></p>
+                </div>
+            </div>
+            
+            <!-- 額外設定 -->
+            <div class="info-card bg-blue-50">
+                <h2 class="text-2xl font-bold text-blue-600 mb-4 flex items-center">
+                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37h.003z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    定位選項
+                </h2 class="text-2xl font-bold text-blue-500 mb-4 flex items-center">
+                <div class="space-y-3 text-base">
+                    <p>最大等待時間 (Timeout): <span class="font-semibold text-gray-800">5000 毫秒</span></p>
+                    <p>最大齡 (Maximum Age): <span class="font-semibold text-gray-800">60000 毫秒 (1分鐘)</span></p>
+                    <p>高精確度 (High Accuracy): <span class="font-semibold text-green-600">啟用 (true)</span></p>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+
+    <script>
+        // DOM 元素參考
+        const statusMessage = document.getElementById('status-message');
+        const messageBox = document.getElementById('messageBox');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const permissionModal = document.getElementById('permissionModal');
+        const modalStartButton = document.getElementById('modalStartButton');
+
+        const dataElements = {
+            lat: document.getElementById('lat'),
+            lon: document.getElementById('lon'),
+            accuracy: document.getElementById('accuracy'),
+            altitude: document.getElementById('altitude'),
+            altitudeAccuracy: document.getElementById('altitudeAccuracy'),
+            heading: document.getElementById('heading'),
+            speed: document.getElementById('speed'),
+            timestamp: document.getElementById('timestamp'),
+            delay: document.getElementById('delay')
+        };
+
+        let watchId = null; 
+        let lastTimestamp = 0; 
+
+        // 定位選項
+        const geoOptions = {
+            enableHighAccuracy: true,
+            timeout: 5000,
+            maximumAge: 60000
+        };
+
+        // 格式化數字並處理 null/NaN
+        function formatValue(value, unit = '', fixed = 4) {
+            if (value === null || typeof value === 'undefined' || isNaN(value)) {
+                return 'N/A';
+            }
+            if (unit === 'timestamp') {
+                return new Date(value).toLocaleString();
+            }
+            return `${value.toFixed(fixed)} ${unit}`;
+        }
+        
+        // 顯示訊息到訊息框
+        function showMessage(type, message) {
+            messageBox.classList.remove('hidden', 'bg-red-100', 'bg-yellow-100', 'border-red-400', 'border-yellow-400', 'text-red-700', 'text-yellow-700');
+            messageBox.textContent = message;
+
+            if (type === 'error') {
+                messageBox.classList.add('bg-red-100', 'border-red-400', 'text-red-700');
+            } else if (type === 'warning') {
+                messageBox.classList.add('bg-yellow-100', 'border-yellow-400', 'text-yellow-700');
+            } else {
+                 messageBox.classList.add('hidden');
+            }
+        }
+
+        // 更新 UI 狀態為已啟動
+        function setRunningState() {
+             // UI 狀態更新
+            startButton.disabled = true;
+            startButton.classList.add('opacity-50', 'cursor-not-allowed');
+            stopButton.disabled = false;
+            stopButton.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+
+        // 更新 UI 狀態為已停止
+        function setStoppedState() {
+             // UI 狀態更新
+            startButton.disabled = false;
+            startButton.classList.remove('opacity-50', 'cursor-not-allowed');
+            stopButton.disabled = true;
+            stopButton.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+
+        // 成功取得位置時的回調函數
+        function success(position) {
+            // 隱藏初始 Modal (如果它還在)
+            permissionModal.classList.add('hidden');
+            setRunningState();
+
+            const coords = position.coords;
+            const now = Date.now();
+            const delay = lastTimestamp ? now - lastTimestamp : 0;
+            lastTimestamp = now;
+
+            // 更新所有數據欄位
+            dataElements.lat.textContent = formatValue(coords.latitude, '°', 6);
+            dataElements.lon.textContent = formatValue(coords.longitude, '°', 6);
+            dataElements.accuracy.textContent = formatValue(coords.accuracy, 'm');
+            dataElements.altitude.textContent = formatValue(coords.altitude, 'm', 2);
+            dataElements.altitudeAccuracy.textContent = formatValue(coords.altitudeAccuracy, 'm', 2);
+            dataElements.heading.textContent = formatValue(coords.heading, '°', 2);
+            dataElements.speed.textContent = formatValue(coords.speed, 'm/s', 2);
+            dataElements.timestamp.textContent = formatValue(position.timestamp, 'timestamp');
+            dataElements.delay.textContent = `${delay} ms`;
+
+            statusMessage.textContent = '狀態: 偵測中 (數據已更新)';
+            messageBox.classList.add('hidden');
+        }
+
+        // 取得位置失敗時的回調函數
+        function error(err) {
+            setStoppedState();
+            // 隱藏初始 Modal (如果它還在)
+            permissionModal.classList.add('hidden');
+
+            let errorMessage = '';
+            
+            if (err.code === 1) {
+                // Permission Denied (使用者拒絕)
+                errorMessage = '📍 錯誤：您已拒絕位置權限。由於隱私政策，網頁無法再次自動請求。';
+                errorMessage += '請手動至 iOS/Safari 設定中開啟：';
+                errorMessage += '「設定」>「隱私權與安全性」>「定位服務」> 找到您的瀏覽器 (Safari) > 允許存取位置。';
+                statusMessage.textContent = '狀態: 權限不足，已停止偵測';
+            } else if (err.code === 2) {
+                // Position Unavailable
+                errorMessage = '錯誤：無法取得位置。請檢查您的 GPS 或網路連線是否正常。';
+                statusMessage.textContent = '狀態: 無法取得位置';
+            } else if (err.code === 3) {
+                // Timeout
+                errorMessage = '錯誤：定位請求超時 (Timeout)。可能是訊號不佳或室內環境導致。';
+                statusMessage.textContent = '狀態: 定位超時';
+            } else {
+                errorMessage = `發生未知錯誤: ${err.message}`;
+                statusMessage.textContent = '狀態: 偵測失敗';
+            }
+            
+            showMessage('error', errorMessage);
+        }
+
+        // 開始偵測功能
+        function startGeolocation() {
+            if (!navigator.geolocation) {
+                showMessage('error', '您的瀏覽器不支援 Geolocation API。');
+                return;
+            }
+
+            if (watchId !== null) {
+                // 先停止舊的監測，確保是重新啟動
+                navigator.geolocation.clearWatch(watchId);
+            }
+
+            // 啟動持續監測
+            watchId = navigator.geolocation.watchPosition(success, error, geoOptions);
+            statusMessage.textContent = '狀態: 正在等待位置資訊...';
+            
+            showMessage('warning', '提示：初次啟動可能需要幾秒鐘等待 GPS 定位。請確保定位服務已開啟。');
+        }
+
+        // 停止偵測功能
+        function stopGeolocation() {
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+                statusMessage.textContent = '狀態: 偵測已停止';
+                showMessage('warning', '偵測已停止。點擊「重新啟動偵測」重新開始。');
+                setStoppedState();
+            }
+        }
+        
+        // 頁面啟動流程：先顯示 Modal
+        function initialSetup() {
+             // 檢查 Geolocation API 是否可用
+             if (!navigator.geolocation) {
+                permissionModal.classList.add('hidden');
+                showMessage('error', '您的瀏覽器不支援 Geolocation API。');
+                return;
+            }
+            // 顯示初始 Modal，讓使用者點擊後觸發權限請求
+            permissionModal.classList.remove('hidden');
+        }
+
+        // 註冊事件監聽器
+        modalStartButton.addEventListener('click', () => {
+             // 隱藏 Modal 並開始請求位置 (這會觸發瀏覽器的權限彈窗)
+            permissionModal.classList.add('hidden');
+            startGeolocation();
+        });
+
+        startButton.addEventListener('click', startGeolocation);
+        stopButton.addEventListener('click', stopGeolocation);
+        
+        // 頁面載入時，執行初始設定
+        window.onload = initialSetup;
+
+    </script>
+</body>
+</html>
+
