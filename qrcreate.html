@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>條碼生成與解讀工具</title>
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 使用 Inter 字體 */
+        body { font-family: 'Inter', sans-serif; }
+        /* 隱藏未開始的視訊元素 */
+        #video, #barcodeDisplay { display: none; margin: 0 auto; }
+        /* 讓視訊流適應容器寬度 */
+        #video { max-width: 100%; height: auto; border-radius: 0.75rem; }
+        /* 自定義掃描區域 */
+        #scanner-container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+        #scanner-container:before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            height: 100px;
+            border-top: 2px solid rgba(255, 0, 0, 0.8);
+            border-bottom: 2px solid rgba(255, 0, 0, 0.8);
+            pointer-events: none;
+            z-index: 10;
+        }
+    </style>
+    <!-- 載入條碼生成與解讀庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://unpkg.com/@zxing/library@0.21.1/umd/index.min.js"></script>
+</head>
+<body class="bg-gray-50 min-h-screen p-4 sm:p-8">
+
+    <div class="max-w-4xl mx-auto bg-white shadow-2xl rounded-xl p-6 sm:p-10">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-4">條碼專家工具</h1>
+
+        <!-- Tab 選擇器 -->
+        <div class="flex border-b border-gray-200 mb-6">
+            <button id="tabGenerate" class="tab-button flex-1 py-3 text-lg font-medium transition duration-200 border-b-4 border-indigo-600 text-indigo-600 hover:bg-indigo-50">
+                產生條碼
+            </button>
+            <button id="tabDecode" class="tab-button flex-1 py-3 text-lg font-medium transition duration-200 border-b-4 border-transparent text-gray-500 hover:text-indigo-600 hover:border-indigo-300">
+                解讀條碼
+            </button>
+        </div>
+
+        <!-- 產生條碼區塊 -->
+        <div id="sectionGenerate" class="tab-content space-y-6">
+            <!-- 輸入欄位 -->
+            <div>
+                <label for="textInput" class="block text-sm font-medium text-gray-700 mb-2">輸入內容 (Text Input):</label>
+                <textarea id="textInput" rows="3" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150" placeholder="請輸入您想編碼的文字，例如：Hello World 12345 測試中文"></textarea>
+            </div>
+
+            <!-- 條碼類型選擇 -->
+            <div>
+                <label for="barcodeType" class="block text-sm font-medium text-gray-700 mb-2">條碼種類 (Barcode Type):</label>
+                <select id="barcodeType" class="w-full p-3 border border-gray-300 rounded-lg bg-white focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
+                    <option value="QRCODE">QR Code (二維碼, 推薦)</option>
+                    <option value="CODE128">Code 128 (一維碼, 適用於 ASCII 字元)</option>
+                </select>
+            </div>
+
+            <!-- 限制與提示訊息 -->
+            <div id="constraintMessage" class="p-4 rounded-lg text-sm transition duration-300" role="alert">
+                <!-- 提示訊息將透過 JS 填充 -->
+            </div>
+            
+            <!-- 條碼顯示區 -->
+            <div class="mt-8 pt-6 border-t border-gray-200">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4">生成結果</h3>
+                <div class="flex justify-center p-4 border border-gray-200 rounded-lg bg-gray-50 min-h-[150px]">
+                    <!-- Code 128 使用 SVG，QR Code 使用 Canvas -->
+                    <svg id="barcodeDisplay" class="max-w-full"></svg>
+                    <div id="qrcodeCanvas" class="p-2"></div>
+                    <p id="initialMessage" class="text-gray-500 self-center">請輸入文字並選擇條碼類型</p>
+                </div>
+                <p id="encodingStatus" class="text-center text-sm text-red-500 mt-2 font-medium hidden">
+                    編碼失敗：內容包含不支援的字元。
+                </p>
+            </div>
+
+        </div>
+
+        <!-- 解讀條碼區塊 -->
+        <div id="sectionDecode" class="tab-content hidden space-y-6">
+            <div id="scanner-container" class="mb-4">
+                <video id="video" playsinline></video>
+                <div id="scannerMessage" class="text-center text-gray-500 py-4">
+                    <p>點擊開始掃描按鈕以啟動攝影機。</p>
+                </div>
+            </div>
+
+            <div class="flex justify-center">
+                <button id="startButton" class="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-300 transform hover:scale-[1.01] active:scale-[0.98] focus:outline-none focus:ring-4 focus:ring-indigo-300">
+                    <span id="buttonText">開始掃描 (啟動攝影機)</span>
+                </button>
+            </div>
+
+            <div class="mt-6 p-5 border border-gray-300 rounded-lg bg-white shadow-inner">
+                <h3 class="text-lg font-semibold text-gray-800 mb-3">解讀結果</h3>
+                <p id="decodedResult" class="text-gray-900 break-words min-h-[24px]">尚無結果</p>
+            </div>
+            <p id="errorLog" class="text-red-500 text-sm hidden"></p>
+        </div>
+    </div>
+
+    <script>
+        // ------------------------------------------------------------------
+        // FIREBASE & AUTHENTICATION (Required for the Canvas environment)
+        // ------------------------------------------------------------------
+        // These variables are provided by the canvas environment.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const apiKey = ""; 
+
+        // ------------------------------------------------------------------
+        // UI & Tab Switching Logic
+        // ------------------------------------------------------------------
+        const tabGenerate = document.getElementById('tabGenerate');
+        const tabDecode = document.getElementById('tabDecode');
+        const sectionGenerate = document.getElementById('sectionGenerate');
+        const sectionDecode = document.getElementById('sectionDecode');
+        
+        // State for the scanner
+        let codeReader = null;
+        let isScanning = false;
+        let videoElement = document.getElementById('video');
+
+        function switchTab(target) {
+            // Reset styles
+            tabGenerate.classList.remove('border-indigo-600', 'text-indigo-600');
+            tabGenerate.classList.add('border-transparent', 'text-gray-500', 'hover:border-indigo-300', 'hover:text-indigo-600');
+            tabDecode.classList.remove('border-indigo-600', 'text-indigo-600');
+            tabDecode.classList.add('border-transparent', 'text-gray-500', 'hover:border-indigo-300', 'hover:text-indigo-600');
+
+            sectionGenerate.classList.add('hidden');
+            sectionDecode.classList.add('hidden');
+
+            if (target === 'generate') {
+                tabGenerate.classList.add('border-indigo-600', 'text-indigo-600');
+                tabGenerate.classList.remove('border-transparent', 'text-gray-500', 'hover:border-indigo-300', 'hover:text-indigo-600');
+                sectionGenerate.classList.remove('hidden');
+                
+                // Stop scanner if active
+                if (isScanning) {
+                    stopScanner();
+                }
+            } else {
+                tabDecode.classList.add('border-indigo-600', 'text-indigo-600');
+                tabDecode.classList.remove('border-transparent', 'text-gray-500', 'hover:border-indigo-300', 'hover:text-indigo-600');
+                sectionDecode.classList.remove('hidden');
+            }
+        }
+
+        tabGenerate.addEventListener('click', () => switchTab('generate'));
+        tabDecode.addEventListener('click', () => switchTab('decode'));
+
+        // Default to generate tab and initial barcode update
+        switchTab('generate');
+
+        // ------------------------------------------------------------------
+        // 1. BARCODE GENERATION LOGIC
+        // ------------------------------------------------------------------
+        const textInput = document.getElementById('textInput');
+        const barcodeType = document.getElementById('barcodeType');
+        const constraintMessage = document.getElementById('constraintMessage');
+        const barcodeDisplay = document.getElementById('barcodeDisplay');
+        const qrcodeCanvasContainer = document.getElementById('qrcodeCanvas');
+        const initialMessage = document.getElementById('initialMessage');
+        const encodingStatus = document.getElementById('encodingStatus');
+
+        let qrcodeInstance = null;
+        
+        // Barcode Constraints Data
+        const constraints = {
+            'QRCODE': {
+                chars: '所有 Unicode 字元 (包含中文、日文、特殊符號)',
+                max: '數字約 7089 字元，中文約 1817 字元 (取決於版本和錯誤修正等級)',
+                style: 'bg-green-100 text-green-700 border border-green-300',
+                isSupported: (text) => true // QR Code supports all text
+            },
+            'CODE128': {
+                chars: '全部 128 個 ASCII 字元 (包含數字、大小寫字母、符號)',
+                max: '建議不超過 80 個字元 (長度會隨資料線性增加)',
+                style: 'bg-yellow-100 text-yellow-700 border border-yellow-300',
+                isSupported: (text) => /^[\x00-\x7F]*$/.test(text) // Only standard ASCII
+            }
+        };
+
+        function updateConstraints() {
+            const type = barcodeType.value;
+            const text = textInput.value;
+            const config = constraints[type];
+
+            let message = `<p class="font-bold">當前選擇：${type === 'QRCODE' ? 'QR Code (二維)' : 'Code 128 (一維)'}</p>`;
+            message += `<ul class="list-disc list-inside mt-1 space-y-1">`;
+            message += `<li><span class="font-medium">支援字元集：</span>${config.chars}</li>`;
+            message += `<li><span class="font-medium">建議最大長度：</span>${config.max}</li>`;
+            
+            if (type === 'CODE128' && !config.isSupported(text)) {
+                 message += `<li class="text-red-600 font-bold">當前輸入包含非 ASCII 字元 (如中文)，Code 128 無法編碼。請切換至 QR Code。</li>`;
+                 encodingStatus.classList.remove('hidden');
+                 encodingStatus.textContent = '編碼失敗：Code 128 不支援當前輸入的字元。';
+            } else {
+                 encodingStatus.classList.add('hidden');
+            }
+
+            message += `</ul>`;
+            
+            constraintMessage.className = `p-4 rounded-lg text-sm transition duration-300 ${config.style}`;
+            constraintMessage.innerHTML = message;
+        }
+
+        function updateBarcode() {
+            const text = textInput.value;
+            const type = barcodeType.value;
+
+            // 1. Update constraints and validation status
+            updateConstraints();
+            
+            // Clear previous displays
+            barcodeDisplay.style.display = 'none';
+            qrcodeCanvasContainer.innerHTML = '';
+            initialMessage.classList.add('hidden');
+            encodingStatus.classList.add('hidden');
+
+            if (text.length === 0) {
+                initialMessage.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                if (type === 'CODE128') {
+                    if (!constraints.CODE128.isSupported(text)) {
+                         // Fallback on constraint update message
+                        return;
+                    }
+                    barcodeDisplay.style.display = 'block';
+                    // JsBarcode will render to the SVG element
+                    JsBarcode("#barcodeDisplay", text, {
+                        format: "CODE128",
+                        displayValue: true,
+                        margin: 10,
+                        height: 80,
+                        width: 1.5
+                    });
+                } else if (type === 'QRCODE') {
+                    // Create a new canvas element for QR Code
+                    const canvasId = 'qrcodeCanvasElement';
+                    qrcodeCanvasContainer.innerHTML = `<div id="${canvasId}"></div>`;
+
+                    // qrcode.js requires a DOM element ID
+                    if (!qrcodeInstance) {
+                         qrcodeInstance = new QRCode(document.getElementById(canvasId), {
+                            text: text,
+                            width: 150,
+                            height: 150,
+                            colorDark : "#000000",
+                            colorLight : "#ffffff",
+                            correctLevel : QRCode.CorrectLevel.H // High error correction
+                        });
+                    } else {
+                        qrcodeInstance.makeCode(text);
+                    }
+                    qrcodeCanvasContainer.style.display = 'flex';
+                    qrcodeCanvasContainer.classList.add('justify-center', 'items-center');
+                }
+            } catch (e) {
+                console.error("Barcode generation failed:", e);
+                encodingStatus.textContent = `編碼失敗：發生錯誤 (${e.message || '未知錯誤'})`;
+                encodingStatus.classList.remove('hidden');
+            }
+        }
+
+        // Attach event listeners for generation inputs
+        textInput.addEventListener('input', updateBarcode);
+        barcodeType.addEventListener('change', updateBarcode);
+
+        // Initial call to set up the view
+        updateBarcode();
+
+
+        // ------------------------------------------------------------------
+        // 2. BARCODE DECODING (SCANNER) LOGIC
+        // ------------------------------------------------------------------
+        const startButton = document.getElementById('startButton');
+        const decodedResult = document.getElementById('decodedResult');
+        const scannerMessage = document.getElementById('scannerMessage');
+        const buttonText = document.getElementById('buttonText');
+        const errorLog = document.getElementById('errorLog');
+
+        function logError(message) {
+             errorLog.textContent = `錯誤: ${message}`;
+             errorLog.classList.remove('hidden');
+             console.error(message);
+        }
+
+        function displayMessage(text, color = 'text-gray-500') {
+            scannerMessage.innerHTML = `<p class="${color} py-4">${text}</p>`;
+        }
+
+        async function startScanner() {
+            if (isScanning) {
+                stopScanner();
+                return;
+            }
+
+            // Reset UI
+            decodedResult.textContent = '掃描中...';
+            errorLog.classList.add('hidden');
+            videoElement.style.display = 'block';
+            buttonText.textContent = '停止掃描';
+            startButton.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+            startButton.classList.add('bg-red-600', 'hover:bg-red-700');
+            displayMessage('請將條碼放入畫面中央的紅框內...');
+            
+            if (!codeReader) {
+                // Initialize CodeReader from ZXing library
+                codeReader = new ZXing.BrowserMultiFormatReader();
+            }
+
+            try {
+                // Find and start decoding from the first available video input device
+                const controls = await codeReader.decodeFromConstraints(
+                    { video: { facingMode: "environment" } }, // Prefer rear camera on mobile
+                    videoElement, 
+                    (result, err) => {
+                        if (result) {
+                            decodedResult.textContent = result.getText();
+                            displayMessage(`成功解讀！類型：${result.getBarcodeFormat().toString()}`, 'text-green-600 font-bold');
+                            stopScanner();
+                        } else if (err && !(err instanceof ZXing.NotFoundException)) {
+                            // Log unexpected errors, but ignore NotFoundException (which happens every frame)
+                            if (err.message.includes('permission')) {
+                                logError('攝影機權限被拒絕。請檢查瀏覽器設定。');
+                                stopScanner();
+                            } else {
+                                console.warn('Decoding error:', err);
+                            }
+                        }
+                    }
+                );
+                
+                // Save controls to stop later
+                codeReader.controls = controls;
+                isScanning = true;
+
+            } catch (e) {
+                logError(`無法啟動攝影機。錯誤訊息：${e.message || '未知錯誤'}`);
+                stopScanner(true); // Stop scanning and force button reset
+            }
+        }
+
+        function stopScanner(forceReset = false) {
+            if (codeReader && codeReader.controls) {
+                codeReader.controls.stop();
+                codeReader.controls = null;
+            }
+
+            if (isScanning || forceReset) {
+                isScanning = false;
+                videoElement.style.display = 'none';
+                buttonText.textContent = '開始掃描 (啟動攝影機)';
+                startButton.classList.remove('bg-red-600', 'hover:bg-red-700');
+                startButton.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+                displayMessage('掃描已停止。');
+                if (decodedResult.textContent.includes('掃描中')) {
+                     decodedResult.textContent = '尚無結果';
+                }
+            }
+        }
+
+        startButton.addEventListener('click', startScanner);
+
+        // Ensure the scanner is stopped when the user leaves the decode tab
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && isScanning) {
+                stopScanner();
+            }
+        });
+
+    </script>
+</body>
+</html>
+
