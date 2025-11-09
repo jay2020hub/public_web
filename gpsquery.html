@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPS 地理定位資訊顯示與導航</title>
+    <title>GPS 地理定位資訊與感應器顯示</title>
     <!-- 載入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -46,7 +46,7 @@
             align-items: center;
             z-index: 1000;
         }
-        /* 羅盤箭頭容器 */
+        /* 導航羅盤箭頭容器 */
         #compass-container {
             width: 80px;
             height: 80px;
@@ -58,10 +58,32 @@
             margin: 0 auto;
             position: relative;
         }
-        /* 羅盤箭頭本身 */
+        /* 導航羅盤箭頭本身 */
         #direction-arrow {
             transition: transform 0.3s ease-out;
             transform: rotate(0deg); /* 初始狀態 */
+        }
+        /* 實體羅盤視覺化 */
+        #physical-compass-container {
+            border: 3px solid #6b7280;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #physical-compass-arrow {
+            /* 實體羅盤指針 (紅色代表北) */
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform-origin: 50% 100%; /* 以底部為中心點旋轉 */
+            width: 0;
+            height: 0;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-bottom: 25px solid #ef4444; /* 紅色箭頭 */
+            transform: translateX(-50%) translateY(0%) rotate(0deg);
         }
     </style>
 </head>
@@ -71,9 +93,9 @@
     <div id="permissionModal" class="modal-overlay">
         <div class="bg-white p-8 rounded-2xl max-w-sm mx-4 text-center shadow-2xl">
             <svg class="w-12 h-12 mx-auto text-blue-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-            <h2 class="text-2xl font-bold mb-3 text-gray-800">需要您的位置資訊</h2>
+            <h2 class="text-2xl font-bold mb-3 text-gray-800">需要您的位置與感應器權限</h2>
             <p class="text-gray-600 mb-6">
-                本工具將請求您的地理定位權限，以便顯示所有 GPS 數據並執行導航計算。
+                本工具將請求您的地理定位權限，同時也會嘗試讀取設備羅盤和加速度計數據。
             </p>
             <button id="modalStartButton" class="action-button bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full w-full">
                 我同意並啟動偵測
@@ -84,8 +106,8 @@
 
     <div class="max-w-4xl mx-auto">
         <header class="text-center mb-8">
-            <h1 class="text-4xl font-extrabold text-blue-600 mb-2">地理定位資訊偵測器</h1>
-            <p class="text-gray-500">定位、樓層估算與導航追蹤</p>
+            <h1 class="text-4xl font-extrabold text-blue-600 mb-2">地理定位與設備感應器偵測器</h1>
+            <p class="text-gray-500">定位、樓層估算、導航追蹤與完整設備資訊</p>
         </header>
 
         <!-- 控制區塊 -->
@@ -107,8 +129,22 @@
         <div id="messageBox" class="hidden mb-6 p-4 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded-lg">
             <!-- 錯誤或提示訊息將顯示在此處 -->
         </div>
+        
+        <!-- 核心位置與時間 (移動到上方) -->
+        <div class="info-card md:col-span-2 mb-6">
+            <h2 class="text-2xl font-bold text-blue-500 mb-4 flex items-center">
+                <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                核心位置與時間
+            </h2>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-lg">
+                <p class="col-span-2 sm:col-span-1">緯度 (Lat): <span id="lat" class="font-mono text-gray-800">N/A</span></p>
+                <p class="col-span-2 sm:col-span-1">經度 (Lon): <span id="lon" class="font-mono text-gray-800">N/A</span></p>
+                <p class="col-span-2 sm:col-span-1">精確度 (Acc.): <span id="accuracy" class="font-mono text-gray-800">N/A</span></p>
+                <p class="col-span-4 sm:col-span-1">更新時間: <span id="timestamp" class="font-mono text-gray-800 text-sm">N/A</span></p>
+            </div>
+        </div>
 
-        <!-- 新增: 目前地址區塊 -->
+        <!-- 目前地址區塊 -->
         <div class="info-card bg-yellow-50 border border-yellow-300 mb-6">
             <h2 class="text-2xl font-bold text-yellow-700 mb-4 flex items-center">
                 <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m0 0l-7 7m7-7v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h4"></path></svg>
@@ -172,26 +208,90 @@
                 <p class="text-lg text-gray-600">估算目前樓層：</p>
                 <p id="estimatedFloor" class="text-4xl font-extrabold text-red-500 mt-1 mb-3">N/A</p>
                 
+                <!-- 樓層校準控制項 -->
+                <div class="mb-3">
+                    <label for="floorSelect" class="block text-sm font-medium text-gray-700 mb-1">
+                        校準樓層選擇 (您目前所在樓層):
+                    </label>
+                    <div class="flex items-center space-x-2">
+                        <select id="floorSelect" class="flex-grow p-2 border border-gray-300 rounded-lg shadow-sm focus:ring-purple-500 focus:border-purple-500">
+                            <!-- Options populated by JS -->
+                        </select>
+                        <button id="calibrateButton" class="action-button bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            校準基準
+                        </button>
+                    </div>
+                </div>
+
                 <p class="text-sm text-gray-600 mb-1">一樓基準海拔: <span id="groundAltitude" class="font-bold text-purple-800">未設定</span></p>
-                <button id="calibrateButton" class="action-button bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 text-sm rounded-lg w-full disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                    設定目前海拔為基準點 (一樓)
-                </button>
             </div>
             
-             <!-- 經緯度與精確度 (核心資訊) -->
-            <div class="info-card md:col-span-2">
-                <h2 class="text-2xl font-bold text-blue-500 mb-4 flex items-center">
-                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                    核心位置與時間
-                </h2>
-                <div class="space-y-3 text-lg">
-                    <p>緯度 (Lat): <span id="lat" class="font-mono text-gray-800">N/A</span></p>
-                    <p>經度 (Lon): <span id="lon" class="font-mono text-gray-800">N/A</span></p>
-                    <p>精確度 (Acc.): <span id="accuracy" class="font-mono text-gray-800">N/A</span></p>
-                    <p>更新時間: <span id="timestamp" class="font-mono text-gray-800 text-sm">N/A</span></p>
+        </div>
+        
+        <!-- 其他偵測資訊區塊 (新增) -->
+        <div class="info-card mt-6 bg-gray-50 border border-gray-300">
+            <h2 class="text-2xl font-bold text-gray-700 mb-4 flex items-center">
+                <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                其他偵測資訊 (Client-Side)
+            </h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+                <!-- 系統與環境 -->
+                <div>
+                    <p class="font-semibold text-gray-600 mb-2 border-b pb-1">系統與環境資訊:</p>
+                    <p>OS: <span id="osName" class="font-mono text-gray-800">N/A</span></p>
+                    <p>瀏覽器: <span id="browserName" class="font-mono text-gray-800">N/A</span></p>
+                    <p>語言: <span id="browserLang" class="font-mono text-gray-800">N/A</span></p>
+                    <p>時區: <span id="timeZone" class="font-mono text-gray-800">N/A</span></p>
+                    <p>DPR: <span id="dpr" class="font-mono text-gray-800">N/A</span></p>
+                </div>
+
+                <!-- 網路與螢幕 -->
+                <div>
+                    <p class="font-semibold text-gray-600 mb-2 border-b pb-1">網路與螢幕狀態:</p>
+                    <p>類型: <span id="netType" class="font-mono text-gray-800">N/A</span></p>
+                    <p>速度 (Mbps): <span id="netSpeed" class="font-mono text-gray-800">N/A</span></p>
+                    <p>螢幕解析度: <span id="screenRes" class="font-mono text-gray-800">N/A</span></p>
+                    <p>可視區域: <span id="viewportSize" class="font-mono text-gray-800">N/A</span></p>
+                </div>
+
+                <!-- 電池與實體羅盤 -->
+                 <div>
+                    <p class="font-semibold text-gray-600 mb-2 border-b pb-1">電源與實體羅盤:</p>
+                    <p class="mb-1">電量: <span id="batteryLevel" class="font-mono text-gray-800">N/A</span></p>
+                    <p class="mb-2">充電中: <span id="isCharging" class="font-mono text-gray-800">N/A</span></p>
+                    
+                    <p class="font-semibold text-gray-600 border-t pt-2 mt-2">設備羅盤 (Alpha):</p>
+                    <div id="physical-compass-container" class="w-20 h-20 flex justify-center items-center border-4 border-gray-400 rounded-full mx-auto relative">
+                         <!-- 羅盤上的 N 標記 -->
+                         <div class="absolute top-1 left-1/2 transform -translate-x-1/2 text-red-600 font-bold text-xs">N</div>
+                         <div id="physical-compass-arrow" class="w-full h-full"></div>
+                        <span id="compassValue" class="text-sm font-bold absolute text-gray-800">N/A</span>
+                    </div>
                 </div>
             </div>
             
+            <!-- 新增: 羅盤與加速度計詳細資訊 -->
+            <div class="mt-6 border-t pt-4">
+                <p class="font-semibold text-gray-700 mb-2 text-lg">運動與方向感應器數據 (需支援):</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- 設備方向 (Device Orientation) -->
+                    <div>
+                        <p class="font-medium text-blue-600 mb-1">設備方向 (陀螺儀/傾斜):</p>
+                        <p>Alpha (Z軸 羅盤): <span id="alpha" class="font-mono text-gray-800">N/A</span></p>
+                        <p>Beta (X軸 俯仰): <span id="beta" class="font-mono text-gray-800">N/A</span></p>
+                        <p>Gamma (Y軸 側傾): <span id="gamma" class="font-mono text-gray-800">N/A</span></p>
+                    </div>
+                    <!-- 加速度計 (Device Motion) -->
+                    <div>
+                        <p class="font-medium text-green-600 mb-1">設備加速度 (Accelerometer):</p>
+                        <p>X 軸 (m/s²): <span id="accX" class="font-mono text-gray-800">N/A</span></p>
+                        <p>Y 軸 (m/s²): <span id="accY" class="font-mono text-gray-800">N/A</span></p>
+                        <p>Z 軸 (m/s²): <span id="accZ" class="font-mono text-gray-800">N/A</span></p>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -215,6 +315,7 @@
         const currentAddressDisplay = document.getElementById('currentAddress');
         const addressSourcesContainer = document.getElementById('addressSourceContainer');
         const addressSourcesList = document.getElementById('addressSources');
+        const floorSelect = document.getElementById('floorSelect'); 
 
 
         const dataElements = {
@@ -225,18 +326,61 @@
             altitudeAccuracy: document.getElementById('altitudeAccuracy'),
             timestamp: document.getElementById('timestamp'),
         };
+        
+        // 新增的「其他資訊」DOM 元素參考
+        const osNameDisplay = document.getElementById('osName');
+        const browserNameDisplay = document.getElementById('browserName');
+        const dprDisplay = document.getElementById('dpr');
+        const netTypeDisplay = document.getElementById('netType');
+        const netSpeedDisplay = document.getElementById('netSpeed');
+        const screenResDisplay = document.getElementById('screenRes');
+        const viewportSizeDisplay = document.getElementById('viewportSize');
+        const batteryLevelDisplay = document.getElementById('batteryLevel');
+        const isChargingDisplay = document.getElementById('isCharging');
+        const browserLangDisplay = document.getElementById('browserLang');
+        const timeZoneDisplay = document.getElementById('timeZone');
+        
+        // 感應器 DOM 參考
+        const alphaDisplay = document.getElementById('alpha');
+        const betaDisplay = document.getElementById('beta');
+        const gammaDisplay = document.getElementById('gamma');
+        const accXDisplay = document.getElementById('accX');
+        const accYDisplay = document.getElementById('accY');
+        const accZDisplay = document.getElementById('accZ');
+        const physicalCompassArrow = document.getElementById('physical-compass-arrow');
+        const compassValueDisplay = document.getElementById('compassValue');
+
 
         let watchId = null; 
-        let currentAltitude = null; // 儲存最新的海拔數據
+        let currentAltitude = null; 
         let currentLatitude = null; 
         let currentLongitude = null; 
-        let groundReferenceAltitude = null; // 儲存使用者校準的基準海拔 (用於樓層)
-        let referenceLocation = { lat: null, lon: null, alt: null }; // 儲存導航參考點
+        let groundReferenceAltitude = null; 
+        let referenceLocation = { lat: null, lon: null, alt: null }; 
         
-        const FLOOR_HEIGHT_METER = 3.0; // 假設每層樓高 3 公尺
-        const EARTH_RADIUS_METER = 6371000; // 地球半徑 (公尺)
+        const FLOOR_HEIGHT_METER = 3.0; 
+        const EARTH_RADIUS_METER = 6371000; 
         const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=";
-        const apiKey = ""; // Canvas 將自動提供 API Key
+        const apiKey = ""; 
+        
+        // 樓層選項定義 (已更新為由高樓層往地下室排列)
+        const floorOptions = [
+            { text: '10F (十樓)', value: 9 },
+            { text: '9F (九樓)', value: 8 },
+            { text: '8F (八樓)', value: 7 },
+            { text: '7F (七樓)', value: 6 },
+            { text: '6F (六樓)', value: 5 },
+            { text: '5F (五樓)', value: 4 },
+            { text: '4F (四樓)', value: 3 },
+            { text: '3F (三樓)', value: 2 },
+            { text: '2F (二樓)', value: 1 },
+            { text: '1F (一樓) - 基準', value: 0 }, // 預設選取
+            { text: 'B1 (地下一樓)', value: -1 },
+            { text: 'B2 (地下二樓)', value: -2 },
+            { text: 'B3 (地下三樓)', value: -3 },
+            { text: 'B4 (地下四樓)', value: -4 },
+        ];
+
 
         // 定位選項
         const geoOptions = {
@@ -314,6 +458,30 @@
             currentAltitude = null;
             currentLatitude = null;
             currentLongitude = null;
+            
+            // 清除感應器數據
+            alphaDisplay.textContent = 'N/A';
+            betaDisplay.textContent = 'N/A';
+            gammaDisplay.textContent = 'N/A';
+            accXDisplay.textContent = 'N/A';
+            accYDisplay.textContent = 'N/A';
+            accZDisplay.textContent = 'N/A';
+            compassValueDisplay.textContent = 'N/A';
+            physicalCompassArrow.style.transform = `translateX(-50%) rotate(0deg)`;
+        }
+        
+        // 填充樓層選擇下拉式選單
+        function populateFloorSelect() {
+            floorSelect.innerHTML = '';
+            floorOptions.forEach(optionData => {
+                const option = document.createElement('option');
+                option.value = optionData.value;
+                option.textContent = optionData.text;
+                if (optionData.value === 0) {
+                    option.selected = true; // 預設選擇 1F
+                }
+                floorSelect.appendChild(option);
+            });
         }
 
         // --- Floor Calculation ---
@@ -325,14 +493,18 @@
             }
 
             const relativeHeight = currentAltitude - groundReferenceAltitude;
+            
+            // 處理極小的浮點數誤差
+            const sanitizedRelativeHeight = (Math.abs(relativeHeight) < 0.5) ? 0 : relativeHeight;
 
-            if (relativeHeight < 0) {
+            if (sanitizedRelativeHeight < 0) {
                 // 地下室
-                const floorBelowGround = Math.ceil(Math.abs(relativeHeight) / FLOOR_HEIGHT_METER);
+                const floorBelowGround = Math.ceil(Math.abs(sanitizedRelativeHeight) / FLOOR_HEIGHT_METER);
                 estimatedFloorDisplay.textContent = `B${floorBelowGround}`;
             } else {
-                // 地上樓層 (1F = 0m)
-                const floorAboveGround = Math.floor(relativeHeight / FLOOR_HEIGHT_METER) + 1;
+                // 地上樓層 (1F = 0m, 2F = 3m)
+                // 為了讓相對高度為 0 時顯示 1F
+                const floorAboveGround = Math.floor(sanitizedRelativeHeight / FLOOR_HEIGHT_METER) + 1;
                 estimatedFloorDisplay.textContent = floorAboveGround.toString();
             }
         }
@@ -391,7 +563,7 @@
                  altitudeDiffDisplay.textContent = 'N/A';
             }
             
-            // 更新羅盤箭頭
+            // 更新導航箭頭
             directionArrow.style.transform = `rotate(${bearing}deg)`;
             directionArrow.style.transition = distance < 1 ? 'none' : 'transform 0.3s ease-out';
         }
@@ -445,8 +617,6 @@
                             if (addressSourcesList.innerHTML === '') {
                                 addressSourcesContainer.classList.add('hidden');
                             }
-                        } else {
-                            addressSourcesContainer.classList.add('hidden');
                         }
                         return; // 成功，退出循環
                     } else {
@@ -467,11 +637,174 @@
             }
         }
         
+        // --- 設備與系統資訊偵測功能 ---
+        
+        function getOSAndBrowserInfo() {
+            const userAgent = navigator.userAgent;
+            let os = '未知 OS';
+            let browser = '未知瀏覽器';
+
+            // 偵測 OS
+            if (userAgent.includes('Win')) os = 'Windows';
+            else if (userAgent.includes('Mac')) os = 'macOS/iOS';
+            else if (userAgent.includes('Android')) os = 'Android';
+            else if (userAgent.includes('Linux')) os = 'Linux';
+            else if (userAgent.includes('X11')) os = 'UNIX';
+
+            // 偵測瀏覽器 (簡化版)
+            if (userAgent.includes('Chrome') && !userAgent.includes('Edg')) {
+                browser = 'Chrome';
+            } else if (userAgent.includes('Firefox')) {
+                browser = 'Firefox';
+            } else if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) {
+                browser = 'Safari';
+            } else if (userAgent.includes('Edg')) {
+                browser = 'Edge';
+            } else if (userAgent.includes('OPR') || userAgent.includes('Opera')) {
+                browser = 'Opera';
+            }
+            
+            osNameDisplay.textContent = os;
+            browserNameDisplay.textContent = browser;
+            browserLangDisplay.textContent = navigator.language;
+            dprDisplay.textContent = formatValue(window.devicePixelRatio, 'x', 2);
+            
+            try {
+                timeZoneDisplay.textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            } catch (e) {
+                timeZoneDisplay.textContent = '無法取得';
+            }
+        }
+
+
+        function getDeviceInfo() {
+            getOSAndBrowserInfo(); // 新增 OS & Browser
+            screenResDisplay.textContent = `${screen.width}x${screen.height} px`;
+            viewportSizeDisplay.textContent = `${window.innerWidth}x${window.innerHeight} px`;
+        }
+
+        function getNetworkInfo() {
+            const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+
+            if (connection) {
+                netTypeDisplay.textContent = connection.type || 'N/A';
+                netSpeedDisplay.textContent = connection.effectiveType ? 
+                                                `${connection.effectiveType} (${connection.downlink || 'N/A'} Mbps)` 
+                                                : 'N/A';
+            } else {
+                netTypeDisplay.textContent = 'API 不支援';
+                netSpeedDisplay.textContent = 'N/A';
+            }
+        }
+
+        async function getBatteryInfo() {
+            if ('getBattery' in navigator) {
+                try {
+                    const battery = await navigator.getBattery();
+
+                    const updateBatteryDisplay = () => {
+                        batteryLevelDisplay.textContent = `${(battery.level * 100).toFixed(0)}%`;
+                        isChargingDisplay.textContent = battery.charging ? '是 (充電中)' : '否 (放電中)';
+                        
+                        if (battery.level < 0.2 && !battery.charging) {
+                            // 低電量警告
+                            showMessage('warning', '⚠️ 設備電量低，請盡快充電！');
+                        }
+                    };
+
+                    updateBatteryDisplay();
+
+                    battery.addEventListener('levelchange', updateBatteryDisplay);
+                    battery.addEventListener('chargingchange', updateBatteryDisplay);
+
+                } catch (e) {
+                    batteryLevelDisplay.textContent = '讀取失敗';
+                    isChargingDisplay.textContent = 'N/A';
+                    console.warn('Could not retrieve battery info:', e);
+                }
+            } else {
+                batteryLevelDisplay.textContent = 'API 不支援';
+                isChargingDisplay.textContent = 'N/A';
+            }
+        }
+        
+        // --- 感應器處理 (羅盤與加速度計) ---
+
+        function handleOrientation(event) {
+            // 由於許多手機需要權限，可能 data.alpha 會是 null
+            if (event.alpha !== null) {
+                const alpha = event.alpha.toFixed(2); // 羅盤 heading (Z-axis)
+                const beta = event.beta.toFixed(2);   // 俯仰 pitch (X-axis)
+                const gamma = event.gamma.toFixed(2); // 側傾 roll (Y-axis)
+
+                alphaDisplay.textContent = `${alpha}°`;
+                betaDisplay.textContent = `${beta}°`;
+                gammaDisplay.textContent = `${gamma}°`;
+                
+                // 實體羅盤視覺化: 羅盤指向的是「北」，設備需要旋轉 -alpha 度來面對北方
+                // 如果使用 webkitCompassHeading (iOS)，則直接是絕對方向，但這裡使用標準 alpha
+                const rotation = 360 - alpha; 
+                physicalCompassArrow.style.transform = `translateX(-50%) rotate(${rotation}deg)`;
+                compassValueDisplay.textContent = `${alpha}°`;
+
+            } else {
+                alphaDisplay.textContent = 'N/A (無數據)';
+                betaDisplay.textContent = 'N/A (無數據)';
+                gammaDisplay.textContent = 'N/A (無數據)';
+                compassValueDisplay.textContent = 'N/A';
+            }
+        }
+
+        function handleMotion(event) {
+            const acc = event.acceleration;
+
+            if (acc && (acc.x !== null || acc.y !== null || acc.z !== null)) {
+                accXDisplay.textContent = acc.x ? acc.x.toFixed(2) : 'N/A';
+                accYDisplay.textContent = acc.y ? acc.y.toFixed(2) : 'N/A';
+                accZDisplay.textContent = acc.z ? acc.z.toFixed(2) : 'N/A';
+            } else {
+                 accXDisplay.textContent = 'N/A (無數據)';
+                 accYDisplay.textContent = 'N/A (無數據)';
+                 accZDisplay.textContent = 'N/A (無數據)';
+            }
+        }
+
+        function startSensorMonitoring() {
+            // 嘗試啟動 Device Orientation (羅盤/陀螺儀)
+            if ('DeviceOrientationEvent' in window) {
+                window.addEventListener('deviceorientation', handleOrientation);
+            } else {
+                alphaDisplay.textContent = 'API 不支援';
+            }
+
+            // 嘗試啟動 Device Motion (加速度計)
+            if ('DeviceMotionEvent' in window) {
+                window.addEventListener('devicemotion', handleMotion);
+            } else {
+                accXDisplay.textContent = 'API 不支援';
+            }
+
+            if ('DeviceOrientationEvent' in window || 'DeviceMotionEvent' in window) {
+                 showMessage('warning', '感應器數據已嘗試啟動。請注意，在 iOS/Safari 上可能需要先點擊螢幕才能啟用感應器權限。');
+            }
+        }
+
+        function stopSensorMonitoring() {
+            window.removeEventListener('deviceorientation', handleOrientation);
+            window.removeEventListener('devicemotion', handleMotion);
+        }
+
+        function updateOtherInfo() {
+            getDeviceInfo();
+            getNetworkInfo();
+            getBatteryInfo();
+            // Sensor monitoring is started only once on initial setup
+        }
+        
         // --- Core Logic ---
 
         // 成功取得位置時的回調函數
         function success(position) {
-            // 隱藏初始 Modal (如果它還在)
             permissionModal.classList.add('hidden');
             setRunningState();
 
@@ -494,7 +827,7 @@
             calculateFloor();
             updateNavigation();
             
-            // 呼叫地址查詢 (只在經緯度首次取得時或有顯著移動時才呼叫，但為了簡潔，這裡每次都呼叫)
+            // 呼叫地址查詢 
             fetchAddress(currentLatitude, currentLongitude);
 
             statusMessage.textContent = '狀態: 偵測中 (數據已更新)';
@@ -504,17 +837,14 @@
         // 取得位置失敗時的回調函數
         function error(err) {
             setStoppedState();
+            stopSensorMonitoring(); // 定位失敗時也停止感應器監測
             clearData();
-            // 隱藏初始 Modal (如果它還在)
             permissionModal.classList.add('hidden');
 
             let errorMessage = '';
             
             if (err.code === 1) {
-                // Permission Denied (使用者拒絕)
-                errorMessage = '📍 錯誤：您已拒絕位置權限。由於隱私政策，網頁無法再次自動請求。';
-                errorMessage += '請手動至 iOS/Safari 設定中開啟：';
-                errorMessage += '「設定」>「隱私權與安全性」>「定位服務」> 找到您的瀏覽器 (Safari) > 允許存取位置。';
+                errorMessage = '📍 錯誤：您已拒絕位置權限。請手動檢查瀏覽器或裝置的定位服務設定。';
                 statusMessage.textContent = '狀態: 權限不足，已停止偵測';
             } else if (err.code === 2) {
                 errorMessage = '錯誤：無法取得位置。請檢查您的 GPS 或網路連線是否正常。';
@@ -542,6 +872,7 @@
             }
 
             watchId = navigator.geolocation.watchPosition(success, error, geoOptions);
+            startSensorMonitoring(); // 啟動感應器監測
             statusMessage.textContent = '狀態: 正在等待位置資訊...';
             
             showMessage('warning', '提示：初次啟動可能需要幾秒鐘等待 GPS 定位。請確保定位服務已開啟。');
@@ -552,6 +883,7 @@
             if (watchId !== null) {
                 navigator.geolocation.clearWatch(watchId);
                 watchId = null;
+                stopSensorMonitoring(); // 停止感應器監測
                 statusMessage.textContent = '狀態: 偵測已停止';
                 showMessage('warning', '偵測已停止。點擊「重新啟動」重新開始。');
                 setStoppedState();
@@ -566,9 +898,16 @@
                 return;
             }
             
-            groundReferenceAltitude = currentAltitude;
+            // 取得選取的樓層偏移量 (1F=0, 2F=1, B1=-1)
+            const selectedFloorOffset = parseInt(floorSelect.value, 10);
+            
+            // 計算基準海拔: 1F海拔 = 當前海拔 - (樓層偏移量 * 每層樓高)
+            groundReferenceAltitude = currentAltitude - (selectedFloorOffset * FLOOR_HEIGHT_METER);
+
+            let floorText = floorOptions.find(o => o.value === selectedFloorOffset).text;
+            
             groundAltitudeDisplay.textContent = formatValue(groundReferenceAltitude, 'm', 2);
-            showMessage('warning', `✅ 成功設定樓層基準海拔: ${formatValue(groundReferenceAltitude, 'm', 2)}。`);
+            showMessage('warning', `✅ 成功設定樓層基準。您將當前位置 (${floorText}) 校準為基準點。`);
             
             calculateFloor();
         }
@@ -598,6 +937,8 @@
                 showMessage('error', '您的瀏覽器不支援 Geolocation API。');
                 return;
             }
+            populateFloorSelect(); // 填充樓層選單
+            updateOtherInfo(); // 載入其他資訊 (系統、網路、電池)
             permissionModal.classList.remove('hidden');
         }
 
@@ -611,6 +952,9 @@
         stopButton.addEventListener('click', stopGeolocation);
         calibrateButton.addEventListener('click', calibrateGroundAltitude);
         markButton.addEventListener('click', markReferenceLocation);
+        
+        // 確保視窗尺寸變化時更新螢幕/視窗資訊
+        window.addEventListener('resize', getDeviceInfo);
         
         // 頁面載入時，執行初始設定
         window.onload = initialSetup;
